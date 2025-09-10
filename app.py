@@ -68,7 +68,6 @@ def fmt_amount(x):
     return f"{val:.2f}"
 
 def ensure_headers(df):
-    # Strip headings and try to preserve exact names
     df.columns = [str(c).strip() for c in df.columns]
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     return missing
@@ -162,19 +161,36 @@ offset_note = st.sidebar.text_input("Nota (si 'total')", value="Provision (auto)
 offset_ref = st.sidebar.text_input("Referencia (si 'total')", value="Provision produccion (auto)")
 
 file = st.file_uploader("Sube tu archivo de entrada (CSV o Excel .xlsx)", type=['csv','xlsx'])
-
 run = st.button("▶ Ejecutar y generar salida.txt")
 
 if run:
     if not file:
         st.error("Sube un archivo primero.")
     else:
-        # Leer archivo
         try:
+            # === LECTOR ROBUSTO DE CSV/EXCEL ===
             if file.name.lower().endswith('.csv'):
-                df = pd.read_csv(file, dtype=str, keep_default_na=False)
+                raw = file.getvalue()  # bytes del CSV
+                df = None
+                for enc in ('utf-8-sig', 'cp1252', 'latin1'):
+                    try:
+                        text = raw.decode(enc, errors='strict')
+                        df = pd.read_csv(
+                            io.StringIO(text),
+                            dtype=str,
+                            keep_default_na=False,
+                            sep=None,        # autodetecta , ; o \t
+                            engine='python'  # necesario para sep=None
+                        )
+                        break
+                    except Exception:
+                        continue
+                if df is None:
+                    st.error("No pude leer el CSV. Guarda como 'CSV UTF-8 (delimitado por comas)' o sube un .xlsx.")
+                    st.stop()
             else:
                 df = pd.read_excel(file, dtype=str, engine='openpyxl')
+
             missing = ensure_headers(df)
             if missing:
                 st.error(f"Faltan columnas requeridas: {', '.join(missing)}")
